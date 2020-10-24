@@ -11,11 +11,15 @@ import 'package:flutter/material.dart';
 import 'src/crop_area.dart';
 import 'src/crop_area_touch_handler.dart';
 import 'src/pan_gesture_recognizer.dart';
+import 'src/image_crop_controller.dart';
+
+export 'src/image_crop_controller.dart';
 
 class ImageCrop extends StatefulWidget {
   final ui.Image image;
+  final ImageCropController controller;
 
-  ImageCrop({Key key, this.image})
+  ImageCrop({Key key, this.image, this.controller})
       : assert(image != null),
         super(key: key);
 
@@ -72,12 +76,8 @@ class ImageCropState extends State<ImageCrop> {
   /// Crops the image to the currently marked area.
   /// Returns a new [ui.Image].
   Future<ui.Image> cropImage() async {
-    final yOffset =
-        (_state.widgetSize.height - _state.fittedImageSize.destination.height) /
-            2.0;
-    final xOffset =
-        (_state.widgetSize.width - _state.fittedImageSize.destination.width) /
-            2.0;
+    final yOffset = (_state.widgetSize.height - _state.fittedImageSize.destination.height) / 2.0;
+    final xOffset = (_state.widgetSize.width - _state.fittedImageSize.destination.width) / 2.0;
     final fittedCropRect = Rect.fromCenter(
       center: Offset(
         _state.cropArea.cropRect.center.dx - xOffset,
@@ -87,13 +87,9 @@ class ImageCropState extends State<ImageCrop> {
       height: _state.cropArea.cropRect.height,
     );
 
-    final scale =
-        _state.imageSize.width / _state.fittedImageSize.destination.width;
-    final imageCropRect = Rect.fromLTRB(
-        fittedCropRect.left * scale,
-        fittedCropRect.top * scale,
-        fittedCropRect.right * scale,
-        fittedCropRect.bottom * scale);
+    final scale = _state.imageSize.width / _state.fittedImageSize.destination.width;
+    final imageCropRect = Rect.fromLTRB(fittedCropRect.left * scale, fittedCropRect.top * scale,
+        fittedCropRect.right * scale, fittedCropRect.bottom * scale);
 
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
@@ -121,8 +117,7 @@ class ImageCropState extends State<ImageCrop> {
     super.initState();
     _state.image = widget.image;
     _state.cropArea = CropArea();
-    _state.cropAreaTouchHandler =
-        CropAreaTouchHandler(cropArea: _state.cropArea);
+    _state.cropAreaTouchHandler = CropAreaTouchHandler(cropArea: _state.cropArea, controller: widget.controller);
   }
 
   void _onPanUpdate(PointerEvent event) {
@@ -147,8 +142,7 @@ class ImageCropState extends State<ImageCrop> {
         foregroundPainter: _OverlayPainter(_state),
         child: RawGestureDetector(
           gestures: {
-            PanGestureRecognizer:
-                GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
+            PanGestureRecognizer: GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
               () => PanGestureRecognizer(
                 onPanUpdate: _onPanUpdate,
                 onPanEnd: _onPanEnd,
@@ -218,16 +212,10 @@ class _ImagePainter extends CustomPainter {
       state.imageSize,
       size,
     );
-    state.horizontalSpacing =
-        (state.widgetSize.width - state.fittedImageSize.destination.width) / 2;
-    state.verticalSpacing =
-        (state.widgetSize.height - state.fittedImageSize.destination.height) /
-            2;
-    state.imageContainingRect = Rect.fromLTWH(
-        state.horizontalSpacing,
-        state.verticalSpacing,
-        state.fittedImageSize.destination.width,
-        state.fittedImageSize.destination.height);
+    state.horizontalSpacing = (state.widgetSize.width - state.fittedImageSize.destination.width) / 2;
+    state.verticalSpacing = (state.widgetSize.height - state.fittedImageSize.destination.height) / 2;
+    state.imageContainingRect = Rect.fromLTWH(state.horizontalSpacing, state.verticalSpacing,
+        state.fittedImageSize.destination.width, state.fittedImageSize.destination.height);
   }
 
   @override
@@ -239,11 +227,21 @@ class _ImagePainter extends CustomPainter {
 class _OverlayPainter extends CustomPainter {
   final _SharedCropState _state;
   final Rect _cropRect;
-  final paintCorner = Paint()
-    ..strokeWidth = 10.0
+  final cornerPaint = Paint()
+    ..strokeWidth = 5.0
     ..strokeCap = StrokeCap.round
     ..color = Colors.white;
-  final paintBackground = Paint()..color = Colors.white30;
+
+  final borderPaint = Paint()
+    ..strokeWidth = 1.5
+    ..strokeCap = StrokeCap.round
+    ..color = Colors.white70;
+
+  final borderStroke = Paint()
+    ..strokeWidth = 3.0
+    ..strokeCap = StrokeCap.round
+    ..color = Colors.black54;
+  final backgroundPaint = Paint()..color = Colors.black45;
 
   _OverlayPainter(this._state) : _cropRect = _state.cropArea.cropRect;
 
@@ -253,20 +251,31 @@ class _OverlayPainter extends CustomPainter {
       _state.cropArea.initSizes(
         bounds: _state.imageContainingRect,
         center: Offset(size.width / 2, size.height / 2),
-        height: 100.0,
-        width: 100.0,
+        height: _state.imageContainingRect.height,
+        width: _state.imageContainingRect.width,
       );
     }
 
-    canvas.drawRect(_state.cropArea.cropRect, paintBackground);
+    canvas.drawPath(
+        Path.combine(
+          PathOperation.difference,
+          Path()..addRect(_state.imageContainingRect),
+          Path()..addRect(_state.cropArea.cropRect),
+        ),
+        backgroundPaint);
+
     final points = <Offset>[
       _state.cropArea.cropRect.topLeft,
       _state.cropArea.cropRect.topRight,
+      _state.cropArea.cropRect.bottomRight,
       _state.cropArea.cropRect.bottomLeft,
-      _state.cropArea.cropRect.bottomRight
     ];
-
-    canvas.drawPoints(ui.PointMode.points, points, paintCorner);
+    for (var i = 0; i < 4; i++) {
+      var y = i == 3 ? 0 : i + 1;
+      canvas.drawLine(points[i], points[y], borderStroke);
+      canvas.drawLine(points[i], points[y], borderPaint);
+    }
+    canvas.drawPoints(ui.PointMode.points, points, cornerPaint);
   }
 
   @override
